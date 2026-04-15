@@ -1,56 +1,58 @@
 # Aegis402
 
-> Camada de segurança **x402-native** para agentes de IA que pagam autonomamente na Solana.
+**🇺🇸 English** · [🇧🇷 Português](README.pt-BR.md)
 
-**Status:** pré-implementação — este repositório contém apenas a documentação do projeto. Código será adicionado na próxima sprint.
-**Hackathon:** [Solana Frontier Hackathon 2026](https://colosseum.com/frontier) · Submissão: **11/mai/2026**
+> Real-time **x402-native security layer** for AI agents paying autonomously on Solana.
+
+**Status:** pre-implementation — this repository currently ships only the project documentation. Code lands on the next sprint.
+**Hackathon:** [Solana Frontier Hackathon 2026](https://colosseum.com/frontier) · Submission deadline: **May 11, 2026**
 
 ---
 
 ## Pitch
 
-Aegis402 é a camada de **perícia forense em tempo real** para a nova economia de agentes IA que já começou a pagar APIs, outros agentes e serviços via o padrão **x402** na Solana. Antes de cada transação ser assinada, o Aegis402 intercepta, valida a **intenção declarada** contra a **ação real** usando regras determinísticas + Claude, grava em **log de auditoria criptograficamente encadeado**, e libera ou bloqueia. Agentes alucinam — Aegis402 não deixa a alucinação virar prejuízo.
+Aegis402 is the **real-time forensic layer** for the emerging economy of AI agents that already pay APIs, other agents, and services autonomously through the **x402** standard on Solana. Before each transaction gets signed, Aegis402 intercepts it, checks the **declared intent** against the **actual decoded action** using deterministic rules + Claude, writes every verdict to a **cryptographically chained audit log**, and releases or blocks. Agents hallucinate — Aegis402 makes sure hallucinations don't turn into drained wallets.
 
 ---
 
-## Problema
+## Problem
 
-A [economia de agentes autônomos](https://solana.com/x402/hackathon) já existe: agentes IA pagam APIs, outros agentes e serviços em tempo real via x402 (HTTP 402 + micropagamentos on-chain). Cada chamada vira uma transação Solana assinada por uma carteira de agente.
+The [autonomous agent economy](https://solana.com/x402/hackathon) is already live: AI agents pay APIs, other agents, and services in real time via x402 (HTTP 402 + on-chain micropayments). Every call becomes a Solana transaction signed by an agent wallet.
 
-Três vetores de risco novos:
-1. **Alucinação:** o LLM "decide" transferir saldo inteiro para um endereço inventado.
-2. **Prompt injection:** um HTML hostil manipula o agente a assinar TX maliciosa.
-3. **Intent drift:** o agente diz que vai "pagar US$ 0,01 pela API X" mas a TX real envia 5 SOL para outro destino.
+Three new attack vectors:
+1. **Hallucination:** the LLM "decides" to transfer the entire balance to a fabricated address.
+2. **Prompt injection:** hostile HTML manipulates the agent into signing a malicious TX.
+3. **Intent drift:** the agent says it will "pay US$ 0.01 for API X" but the actual TX sends 5 SOL to a different destination.
 
-Não existe hoje uma camada padrão que valide **intenção declarada vs ação real** antes da assinatura.
-
----
-
-## Solução — Aegis402 em 3 bullets
-
-- **Proxy RPC + SDK Python** que qualquer agente ou stack x402 pluga em minutos (sem mudar o agente).
-- **Perícia híbrida:** camada determinística (blocklist, limites, simulação) + Claude validando semanticamente se a intenção declarada bate com a TX decodificada.
-- **Audit chain:** todo veredicto é gravado em log append-only com hash encadeado — trilha forense verificável, pronta para compliance.
+There is no standard layer today that validates **declared intent vs actual action** before signing.
 
 ---
 
-## Diferencial técnico
+## Solution — Aegis402 in 3 bullets
 
-| Camada | O que faz | Tecnologia |
+- **Python RPC proxy + SDK** that any agent or x402 stack plugs into in minutes (no change to the agent).
+- **Hybrid forensics:** deterministic layer (blocklist, thresholds, simulation) + Claude validating semantically whether the declared intent matches the decoded TX.
+- **Audit chain:** every verdict is written to an append-only log with chained hashes — a verifiable forensic trail ready for compliance.
+
+---
+
+## Technical edge
+
+| Layer | What it does | Tech |
 |---|---|---|
-| Rules | Fail-fast em ataques óbvios (amount threshold, allowlist de programas, dedup, rate limit) | Python puro, plugável via YAML |
-| Simulator | Executa `simulateTransaction` na Solana e analisa diff de saldos antes de liberar | `solders` / `solana-py` |
-| Intent Validator | Claude Opus 4.6 compara intenção declarada ↔ transação decodificada, com prompt caching | Anthropic SDK |
-| Audit Chain | Append-only SQLite com hash Merkle encadeado — verificável | SQLite + hashlib |
+| Rules | Fail-fast on obvious attacks (amount threshold, program allowlist, dedup, rate limit) | Pure Python, YAML-pluggable |
+| Simulator | Runs `simulateTransaction` on Solana and analyzes balance diffs before allowing | `solders` / `solana-py` |
+| Intent Validator | Claude Opus 4.6 compares declared intent ↔ decoded TX, with prompt caching | Anthropic SDK |
+| Audit Chain | Append-only SQLite with chained Merkle-style hashes — verifiable | SQLite + hashlib |
 
 ---
 
-## Arquitetura (resumo)
+## Architecture (overview)
 
 ```
 ┌──────────────┐      ┌──────────────────────────────────────┐      ┌───────────┐
-│ Agente IA /  │      │           Aegis402 (middleware)      │      │  Solana   │
-│ Stack x402   │─────▶│  Proxy RPC  →  Forensic Engine       │─────▶│  devnet/  │
+│ AI Agent /   │      │           Aegis402 (middleware)      │      │  Solana   │
+│ x402 stack   │─────▶│  RPC Proxy  →  Forensic Engine       │─────▶│  devnet/  │
 │              │      │              ┌──────────────────┐    │      │  mainnet  │
 └──────┬───────┘      │              │ Rules            │    │      └───────────┘
        │              │              │ Simulator        │    │
@@ -60,49 +62,50 @@ Não existe hoje uma camada padrão que valide **intenção declarada vs ação 
                       └──────────────────────────────────────┘
 ```
 
-Detalhes em [`docs/ARQUITETURA.md`](docs/ARQUITETURA.md).
+Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
-## Stack prevista
+## Planned stack
 
 - **Python 3.11+**
-- `solders` + `solana-py` — cliente Solana
-- `anthropic` — Claude Opus 4.6 com prompt caching
-- `fastapi` + `uvicorn` — proxy RPC
+- `solders` + `solana-py` — Solana client
+- `anthropic` — Claude Opus 4.6 with prompt caching
+- `fastapi` + `uvicorn` — RPC proxy
 - `pydantic` v2 — schemas
 - `sqlalchemy` + SQLite — audit log
-- `httpx` — upstream RPC + testes
+- `httpx` — upstream RPC + tests
 - `pytest` + `pytest-asyncio`
 
 ---
 
-## Estado atual do repositório
+## Current repository state
 
 ```
 aegis402/
-├── README.md           ← você está aqui
+├── README.md              ← you are here (English)
+├── README.pt-BR.md        ← Portuguese version
 ├── LICENSE
 └── docs/
-    ├── ARQUITETURA.md
-    └── ROADMAP.md
+    ├── ARCHITECTURE.md         ARCHITECTURE.pt-BR.md
+    └── ROADMAP.md              ROADMAP.pt-BR.md
 ```
 
-Nenhum código-fonte ainda. Implementação começa após alinhamento desta documentação.
+No source code yet. Implementation starts after the documentation review round.
 
 ---
 
-## Próximos passos
+## Next steps
 
-1. Colher feedback sobre esta documentação.
-2. Kick-off da implementação seguindo [`docs/ROADMAP.md`](docs/ROADMAP.md).
-3. Submissão no Colosseum Arena até 11/mai/2026.
+1. Collect feedback on this documentation.
+2. Kick off implementation following [`docs/ROADMAP.md`](docs/ROADMAP.md).
+3. Submit on Colosseum Arena by May 11, 2026.
 
 ---
 
-## Links do hackathon
+## Hackathon links
 
-- Landing Frontier: https://colosseum.com/frontier
-- Inscrição (trilha Brasil): https://arena.colosseum.org?ref=brasil
-- Wiki de submission (Superteam BR): https://wiki.superteam.com.br
-- Discord Superteam BR: https://discord.com/invite/superteambrasil
+- Frontier landing: https://colosseum.com/frontier
+- Registration (Brazil track): https://arena.colosseum.org?ref=brasil
+- Submission wiki (Superteam BR): https://wiki.superteam.com.br
+- Superteam BR Discord: https://discord.com/invite/superteambrasil

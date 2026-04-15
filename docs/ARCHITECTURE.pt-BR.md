@@ -1,5 +1,7 @@
 # Arquitetura — Aegis402
 
+[🇺🇸 English](ARCHITECTURE.md) · **🇧🇷 Português**
+
 Documento técnico de referência. Zero código nesta fase — apenas componentes, fluxos e estruturas previstas.
 
 ---
@@ -113,16 +115,15 @@ Cada cenário gera registro no audit log com `prev_hash` encadeado, demonstrando
 ## 5. Estrutura de pastas prevista
 
 ```
-hackton_solana/
+aegis402/
 ├── README.md
+├── README.pt-BR.md
 ├── pyproject.toml
 ├── .env.example
 ├── CLAUDE.md                    ← contexto p/ próximas sessões
 ├── docs/
-│   ├── ARQUITETURA.md
-│   ├── HACKATHON_PITCH.md
-│   ├── ROADMAP.md
-│   └── TIME.md
+│   ├── ARCHITECTURE.md         ARCHITECTURE.pt-BR.md
+│   └── ROADMAP.md              ROADMAP.pt-BR.md
 ├── src/aegis402/
 │   ├── __init__.py
 │   ├── config.py
