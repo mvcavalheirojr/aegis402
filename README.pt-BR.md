@@ -49,17 +49,18 @@ Não existe hoje uma camada padrão que valide **intenção declarada vs ação 
 
 ## Arquitetura (resumo)
 
-```
-┌──────────────┐      ┌──────────────────────────────────────┐      ┌───────────┐
-│ Agente IA /  │      │           Aegis402 (middleware)      │      │  Solana   │
-│ Stack x402   │─────▶│  Proxy RPC  →  Forensic Engine       │─────▶│  devnet/  │
-│              │      │              ┌──────────────────┐    │      │  mainnet  │
-└──────┬───────┘      │              │ Rules            │    │      └───────────┘
-       │              │              │ Simulator        │    │
-       │  SDK         │              │ Intent (Claude)  │    │
-       └─────────────▶│              │ Audit chain ⛓    │    │
-                      │              └──────────────────┘    │
-                      └──────────────────────────────────────┘
+```mermaid
+flowchart LR
+    A["Agente IA / Stack x402"] -->|"RPC ou SDK"| P
+    subgraph AEGIS["Aegis402 (middleware)"]
+        direction TB
+        P["Proxy RPC"] --> E["Forensic Engine"]
+        E --> R["Rules"]
+        E --> S["Simulator"]
+        E --> I["Intent Validator (Claude)"]
+        E --> AU[("Audit chain ⛓")]
+    end
+    P -->|"TX aprovada"| SOL[("Solana devnet / mainnet")]
 ```
 
 Detalhes em [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md).

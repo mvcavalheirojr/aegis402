@@ -49,17 +49,18 @@ There is no standard layer today that validates **declared intent vs actual acti
 
 ## Architecture (overview)
 
-```
-┌──────────────┐      ┌──────────────────────────────────────┐      ┌───────────┐
-│ AI Agent /   │      │           Aegis402 (middleware)      │      │  Solana   │
-│ x402 stack   │─────▶│  RPC Proxy  →  Forensic Engine       │─────▶│  devnet/  │
-│              │      │              ┌──────────────────┐    │      │  mainnet  │
-└──────┬───────┘      │              │ Rules            │    │      └───────────┘
-       │              │              │ Simulator        │    │
-       │  SDK         │              │ Intent (Claude)  │    │
-       └─────────────▶│              │ Audit chain ⛓    │    │
-                      │              └──────────────────┘    │
-                      └──────────────────────────────────────┘
+```mermaid
+flowchart LR
+    A["AI Agent / x402 stack"] -->|"RPC or SDK"| P
+    subgraph AEGIS["Aegis402 middleware"]
+        direction TB
+        P["RPC Proxy"] --> E["Forensic Engine"]
+        E --> R["Rules"]
+        E --> S["Simulator"]
+        E --> I["Intent Validator (Claude)"]
+        E --> AU[("Audit chain ⛓")]
+    end
+    P -->|"approved TX"| SOL[("Solana devnet / mainnet")]
 ```
 
 Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).

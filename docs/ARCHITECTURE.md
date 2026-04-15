@@ -57,43 +57,41 @@ Orchestrator chains: **Rules → Simulator → Intent Validator → Audit**. Fai
 
 ## 2. End-to-end flow (legit TX)
 
-```
-AI Agent                 Aegis402 Proxy              Solana RPC
-    │                           │                         │
-    │ sendTransaction(tx)       │                         │
-    ├──────────────────────────▶│                         │
-    │                           │ Rules.check(tx)         │
-    │                           │  OK                     │
-    │                           │                         │
-    │                           │ simulateTransaction ───▶│
-    │                           │◀── simulation result ───│
-    │                           │                         │
-    │                           │ IntentValidator.check() │
-    │                           │  (Claude: intent==tx ✓) │
-    │                           │                         │
-    │                           │ Audit.append(verdict)   │
-    │                           │                         │
-    │                           │ sendTransaction ───────▶│
-    │                           │◀─────── tx signature ───│
-    │◀── signature ─────────────│                         │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as AI Agent
+    participant X as Aegis402 Proxy
+    participant S as Solana RPC
+
+    A->>X: sendTransaction(tx)
+    X->>X: Rules.check(tx) ✓
+    X->>S: simulateTransaction
+    S-->>X: simulation result
+    X->>X: IntentValidator.check()<br/>(Claude: intent == tx ✓)
+    X->>X: Audit.append(verdict)
+    X->>S: sendTransaction
+    S-->>X: tx signature
+    X-->>A: signature
 ```
 
 ## 3. End-to-end flow (malicious TX — intent drift)
 
-```
-Rogue Agent             Aegis402 Proxy               Solana RPC
-    │                         │                            │
-    │ intent="pay 0.01 SOL    │                            │
-    │        for API X"       │                            │
-    │ tx=transfer 5 SOL → 0xATTACKER                       │
-    ├────────────────────────▶│                            │
-    │                         │ Rules: amount > cap ⚠     │
-    │                         │ Simulator: balance drain⚠ │
-    │                         │ Intent: mismatch ✗         │
-    │                         │                            │
-    │                         │ Audit.append(BLOCKED)      │
-    │                         │                            │
-    │◀── HTTP 403 + verdict   │                            │
+```mermaid
+sequenceDiagram
+    autonumber
+    participant R as Rogue Agent
+    participant X as Aegis402 Proxy
+    participant S as Solana RPC
+
+    Note over R: intent = "pay 0.01 SOL for API X"<br/>tx = transfer 5 SOL → 0xATTACKER
+    R->>X: sendTransaction(tx)
+    X->>X: Rules: amount > cap ⚠
+    X->>X: Simulator: balance drain ⚠
+    X->>X: Intent: mismatch ✗
+    X->>X: Audit.append(BLOCKED)
+    X-->>R: HTTP 403 + verdict
+    Note over S: TX never reaches Solana
 ```
 
 ---
