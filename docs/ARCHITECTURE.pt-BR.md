@@ -31,16 +31,23 @@ Encadeamento (orchestrator): **Rules → Simulator → Intent Validator → Audi
 - Rate limit / burst detection (dust-drain)
 - Política plugável via YAML (`policies/default.yaml`)
 
-#### 1.3.2 Simulator
-- Chama `simulateTransaction` no RPC upstream.
-- Parse do resultado: mudanças de saldo SOL, mudanças de saldo SPL, erros de execução.
-- Comparação do diff simulado com limites da política.
+#### 1.3.2 Simulator — preview local via `simulateTransaction`
+O RPC da Solana expõe `simulateTransaction`, que executa uma TX contra o estado atual **sem** confirmá-la. Aegis402 usa isso como camada determinística de pré-visualização:
 
-#### 1.3.3 Intent Validator (Claude)
-- Entrada: `(intent_declaration, decoded_transaction, agent_context)`.
+- Chama `simulateTransaction` com `replaceRecentBlockhash=true` e `accounts.encoding="base64"` para receber o estado pós-execução de cada conta tocada pela TX.
+- Parse da resposta num **diff de saldos** estruturado: delta de SOL por conta, delta de SPL por dono, logs de programa, compute units consumidos, erros de execução.
+- Cruza o diff com a política (ex.: "nenhuma conta do agente pode perder mais de X SOL", "nenhum SPL mint desconhecido pode receber fundos do agente").
+- **Por que importa:** pega drenos e swaps que passam pelas regras estáticas mas só se revelam quando a TX é de fato executada. Se o estado simulado viola a política, o veredicto é `block` antes de o `sendTransaction` real ir à rede.
+
+#### 1.3.3 Intent Validator (Claude) — em tiers para latência
+- Entrada: `(intent_declaration, decoded_transaction, simulated_balance_diff, agent_context)`.
 - Saída: `{verdict: allow|block|warn, confidence: 0..1, reasoning: str}`.
-- Prompt caching (Anthropic) nas partes estáticas do prompt (schema, regras, exemplos) → custo efetivo por TX cai drasticamente.
-- Timeout curto + fallback determinístico se Claude indisponível.
+- **Roteamento de modelos em tiers** (crítico para workloads de agente onde ms importam):
+  - **Caminho quente — Claude Haiku 4.5** roda em toda TX. ~300-500ms típico, barato, resolve casos claros.
+  - **Escalação — Claude Opus 4.6** só dispara quando Haiku retorna baixa confiança, a TX é de alto valor (acima de um limite da política), ou o agent_context sinaliza. Opus é mais lento, mas só para o pequeno subset onde precisão vale mais que latência.
+- **Prompt caching** (Anthropic) nas partes estáticas do prompt (schema, regras, few-shot) → tokens de entrada caem ~90% após a primeira call em cada tier.
+- Timeout curto (~1s Haiku, ~3s Opus) + fallback determinístico (`fail_closed` default) se Claude indisponível.
+- **Latência alvo ponta-a-ponta:** sub-segundo no caso comum (Rules + Simulator + Haiku rodando em paralelo onde seguro).
 
 #### 1.3.4 Audit Chain
 - SQLite append-only.
@@ -156,7 +163,7 @@ aegis402/
 
 ---
 
-## 6. Integração com x402 — ponto exato de intercepção
+## 6. Integração com x402 — a menor barreira de entrada possível
 
 O fluxo x402 canônico:
 1. Cliente chama endpoint pago → recebe HTTP 402 com requisitos de pagamento.
@@ -164,7 +171,22 @@ O fluxo x402 canônico:
 3. Cliente assina e submete TX via `sendTransaction`.
 4. Servidor verifica on-chain e libera a resposta.
 
-**Aegis402 entra no passo 3:** o agente aponta seu RPC para o proxy Aegis402 em vez do RPC direto. Zero mudança de código do lado do agente/cliente x402 — basta trocar a env var `SOLANA_RPC_URL`.
+**Aegis402 entra no passo 3 via uma mudança de uma linha.** O dev do agente troca a URL do RPC Solana:
+
+```diff
+- SOLANA_RPC_URL=https://api.devnet.solana.com
++ SOLANA_RPC_URL=https://aegis402.example.com/rpc
+```
+
+Só isso. O agente, a lib cliente x402 e a carteira continuam mandando `sendTransaction` normalmente — Aegis402 intercepta transparentemente, roda a stack forense completa e ou encaminha ao RPC real da Solana (em `allow`) ou devolve um veredicto `block` estruturado como erro JSON-RPC.
+
+**Por que isso importa para adoção:**
+- Nenhum SDK precisa ser instalado para proteção básica.
+- Zero mudança no prompting do agente, na carteira ou no facilitator x402.
+- Funciona em *qualquer* linguagem — o agente pode ser Python, TS, Rust, ou qualquer coisa que fale JSON-RPC.
+- Fácil de fazer A/B test: passa metade da frota pelo Aegis402, deixa a outra metade direta.
+
+O SDK Python (`aegis402.AegisClient`) existe para times que querem integração mais rica — passando intenção estruturada, anexando metadata do agente, ou recebendo veredictos como objetos Python tipados — mas só o caminho RPC já entrega a garantia central.
 
 ---
 

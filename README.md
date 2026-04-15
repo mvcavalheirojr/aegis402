@@ -30,8 +30,8 @@ There is no standard layer today that validates **declared intent vs actual acti
 
 ## Solution — Aegis402 in 3 bullets
 
-- **Python RPC proxy + SDK** that any agent or x402 stack plugs into in minutes (no change to the agent).
-- **Hybrid forensics:** deterministic layer (blocklist, thresholds, simulation) + Claude validating semantically whether the declared intent matches the decoded TX.
+- **Drop-in via a single env var.** Aegis402 ships as a Solana RPC proxy: the agent developer swaps `SOLANA_RPC_URL` to point at Aegis402 and the middleware transparently inspects every `sendTransaction`. Zero agent code changes. Python SDK available for deeper integrations.
+- **Hybrid forensics with local simulation.** Deterministic rules (blocklist, thresholds, rate limits) + **Solana `simulateTransaction` to preview the exact balance diff before signing** + Claude validating semantically whether the declared intent matches the decoded TX.
 - **Audit chain:** every verdict is written to an append-only log with chained hashes — a verifiable forensic trail ready for compliance.
 
 ---
@@ -41,9 +41,11 @@ There is no standard layer today that validates **declared intent vs actual acti
 | Layer | What it does | Tech |
 |---|---|---|
 | Rules | Fail-fast on obvious attacks (amount threshold, program allowlist, dedup, rate limit) | Pure Python, YAML-pluggable |
-| Simulator | Runs `simulateTransaction` on Solana and analyzes balance diffs before allowing | `solders` / `solana-py` |
-| Intent Validator | Claude Opus 4.6 compares declared intent ↔ decoded TX, with prompt caching | Anthropic SDK |
+| Simulator | Runs Solana `simulateTransaction` and extracts the **balance diff** before signing — catches drains even when rules pass | `solders` / `solana-py` |
+| Intent Validator | Claude compares declared intent ↔ decoded TX, with prompt caching. **Tiered models:** Haiku 4.5 on the hot path (~300-500ms), Opus 4.6 escalated only for high-value or ambiguous TXs | Anthropic SDK |
 | Audit Chain | Append-only SQLite with chained Merkle-style hashes — verifiable | SQLite + hashlib |
+
+> **Why latency matters:** an agent making an x402 call can't afford a 10-second verdict. Aegis402 targets **sub-second end-to-end** by running rules and simulation in parallel with a Haiku 4.5 intent check, escalating to Opus only when the fast path is inconclusive.
 
 ---
 
@@ -51,27 +53,27 @@ There is no standard layer today that validates **declared intent vs actual acti
 
 ```mermaid
 flowchart LR
-    A["AI Agent / x402 stack"] -->|"RPC or SDK"| P
+    A["AI Agent / x402 stack"] -->|"swap SOLANA_RPC_URL<br/>(or use SDK)"| P
     subgraph AEGIS["Aegis402 middleware"]
         direction TB
-        P["RPC Proxy"] --> E["Forensic Engine"]
-        E --> R["Rules"]
-        E --> S["Simulator"]
-        E --> I["Intent Validator (Claude)"]
+        P["RPC Proxy<br/>(drop-in)"] --> E["Forensic Engine"]
+        E --> R["Rules<br/>(deterministic)"]
+        E --> S["Simulator<br/>(simulateTransaction<br/>balance diff)"]
+        E --> I["Intent Validator<br/>(Haiku 4.5 → Opus 4.6)"]
         E --> AU[("Audit chain ⛓")]
     end
     P -->|"approved TX"| SOL[("Solana devnet / mainnet")]
 ```
 
-Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+**Integration is a single env-var swap:** point `SOLANA_RPC_URL` at the Aegis402 proxy and every `sendTransaction` gets a verdict before reaching Solana. Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
 ## Planned stack
 
 - **Python 3.11+**
-- `solders` + `solana-py` — Solana client
-- `anthropic` — Claude Opus 4.6 with prompt caching
+- `solders` + `solana-py` — Solana client (incl. `simulateTransaction` for balance-diff preview)
+- `anthropic` — tiered Claude routing (Haiku 4.5 default; Opus 4.6 for escalation) with prompt caching
 - `fastapi` + `uvicorn` — RPC proxy
 - `pydantic` v2 — schemas
 - `sqlalchemy` + SQLite — audit log

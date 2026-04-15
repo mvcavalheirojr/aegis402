@@ -30,8 +30,8 @@ Não existe hoje uma camada padrão que valide **intenção declarada vs ação 
 
 ## Solução — Aegis402 em 3 bullets
 
-- **Proxy RPC + SDK Python** que qualquer agente ou stack x402 pluga em minutos (sem mudar o agente).
-- **Perícia híbrida:** camada determinística (blocklist, limites, simulação) + Claude validando semanticamente se a intenção declarada bate com a TX decodificada.
+- **Drop-in via uma única env var.** Aegis402 entrega um proxy RPC Solana: o dev do agente troca `SOLANA_RPC_URL` para apontar ao Aegis402 e o middleware passa a inspecionar todo `sendTransaction`. Zero mudança no código do agente. SDK Python disponível para integrações mais profundas.
+- **Perícia híbrida com simulação local.** Regras determinísticas (blocklist, limites, rate limits) + **Solana `simulateTransaction` pré-visualizando o diff de saldo exato antes da assinatura** + Claude validando semanticamente se a intenção declarada bate com a TX decodificada.
 - **Audit chain:** todo veredicto é gravado em log append-only com hash encadeado — trilha forense verificável, pronta para compliance.
 
 ---
@@ -41,9 +41,11 @@ Não existe hoje uma camada padrão que valide **intenção declarada vs ação 
 | Camada | O que faz | Tecnologia |
 |---|---|---|
 | Rules | Fail-fast em ataques óbvios (amount threshold, allowlist de programas, dedup, rate limit) | Python puro, plugável via YAML |
-| Simulator | Executa `simulateTransaction` na Solana e analisa diff de saldos antes de liberar | `solders` / `solana-py` |
-| Intent Validator | Claude Opus 4.6 compara intenção declarada ↔ transação decodificada, com prompt caching | Anthropic SDK |
+| Simulator | Executa `simulateTransaction` da Solana e extrai o **diff de saldos** antes da assinatura — pega drenos mesmo quando as regras passam | `solders` / `solana-py` |
+| Intent Validator | Claude compara intenção declarada ↔ TX decodificada, com prompt caching. **Modelos em tiers:** Haiku 4.5 no caminho quente (~300-500ms), Opus 4.6 só escalado em TXs de alto valor ou ambíguas | Anthropic SDK |
 | Audit Chain | Append-only SQLite com hash Merkle encadeado — verificável | SQLite + hashlib |
+
+> **Por que latência importa:** um agente fazendo chamada x402 não pode esperar 10 segundos por um veredicto. Aegis402 mira **sub-segundo ponta-a-ponta** rodando regras e simulação em paralelo com uma checagem de intenção via Haiku 4.5, escalando para Opus só quando o caminho rápido é inconclusivo.
 
 ---
 
@@ -51,27 +53,27 @@ Não existe hoje uma camada padrão que valide **intenção declarada vs ação 
 
 ```mermaid
 flowchart LR
-    A["Agente IA / Stack x402"] -->|"RPC ou SDK"| P
+    A["Agente IA / Stack x402"] -->|"trocar SOLANA_RPC_URL<br/>(ou usar SDK)"| P
     subgraph AEGIS["Aegis402 (middleware)"]
         direction TB
-        P["Proxy RPC"] --> E["Forensic Engine"]
-        E --> R["Rules"]
-        E --> S["Simulator"]
-        E --> I["Intent Validator (Claude)"]
+        P["Proxy RPC<br/>(drop-in)"] --> E["Forensic Engine"]
+        E --> R["Rules<br/>(determinístico)"]
+        E --> S["Simulator<br/>(simulateTransaction<br/>diff de saldo)"]
+        E --> I["Intent Validator<br/>(Haiku 4.5 → Opus 4.6)"]
         E --> AU[("Audit chain ⛓")]
     end
     P -->|"TX aprovada"| SOL[("Solana devnet / mainnet")]
 ```
 
-Detalhes em [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md).
+**Integração é uma única troca de env var:** aponte `SOLANA_RPC_URL` para o proxy Aegis402 e todo `sendTransaction` recebe veredicto antes de chegar à Solana. Detalhes em [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md).
 
 ---
 
 ## Stack prevista
 
 - **Python 3.11+**
-- `solders` + `solana-py` — cliente Solana
-- `anthropic` — Claude Opus 4.6 com prompt caching
+- `solders` + `solana-py` — cliente Solana (incl. `simulateTransaction` para preview de diff de saldo)
+- `anthropic` — roteamento Claude em tiers (Haiku 4.5 default; Opus 4.6 em escalação) com prompt caching
 - `fastapi` + `uvicorn` — proxy RPC
 - `pydantic` v2 — schemas
 - `sqlalchemy` + SQLite — audit log
