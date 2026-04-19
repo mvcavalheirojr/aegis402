@@ -2,7 +2,7 @@
 
 [🇺🇸 English](ROADMAP.md) · **🇧🇷 Português**
 
-**Deadline:** 11/mai/2026 · **Janela restante:** ~26 dias.
+**Deadline:** 11/mai/2026 · **Janela restante:** ~22 dias.
 
 Cronograma em **blocos de ~2-3 dias**. Ownership das frentes é tratado internamente pelo time.
 
@@ -10,86 +10,76 @@ Cronograma em **blocos de ~2-3 dias**. Ownership das frentes é tratado internam
 
 ## Fase 0 — Alinhamento (antes do kick-off)
 
-- [ ] Time lê os 5 docs públicos e levanta dúvidas
+- [ ] Time lê os docs públicos e levanta dúvidas
 - [ ] Divisão final de frentes + cadência acordada
 
 ## Fase 1 — Bootstrap (2 dias · d1-2)
 
-- [ ] `pyproject.toml` com deps travadas (solders, solana-py, anthropic, fastapi, pydantic, sqlalchemy, httpx, pytest)
-- [ ] Estrutura de pastas conforme `ARCHITECTURE.pt-BR.md §5`
-- [ ] `.env.example` (SOLANA_RPC_URL, ANTHROPIC_API_KEY, AEGIS_POLICY_PATH)
-- [ ] `CLAUDE.md` com contexto do projeto para próximas sessões
-- [ ] CI mínimo (`pytest` + lint) no GitHub Actions
+- [ ] `Anchor.toml` + scaffold do projeto Anchor
+- [ ] Estrutura de pastas conforme `ARCHITECTURE.pt-BR.md §7`
+- [ ] `package.json` com config de workspace (programs, sdk, app, tests)
+- [ ] `.env.example` (SOLANA_RPC_URL, ANCHOR_WALLET, PROGRAM_ID)
+- [ ] CI mínimo (Anchor build + test) no GitHub Actions
 
-## Fase 2 — Decoder + Schemas (2 dias · d3-4)
+## Fase 2 — Smart Contract: Core (3 dias · d3-5)
 
-- [ ] `schemas.py` — `IntentDeclaration`, `Verdict`, `TxAnalysis`, `DecodedInstruction`
-- [ ] `engine/decoder.py` — decodifica System (transfer), SPL Token (transfer, approve), x402 facilitator
-- [ ] Testes unitários cobrindo cada tipo de instrução
+- [ ] `state.rs` — structs das contas `Vault` e `Policy`
+- [ ] `instructions/initialize.rs` — criar cofre PDA + conta de política
+- [ ] `instructions/deposit.rs` — transferir SOL/SPL para o cofre
+- [ ] `instructions/withdraw.rs` — saque do operador com verificação de autoridade
+- [ ] `errors.rs` — tipos de erro customizados (PolicyViolation, Unauthorized, etc.)
+- [ ] Testes Anchor para ciclo de vida do cofre (init → deposit → withdraw)
 
-## Fase 3 — Rules Engine (3 dias · d5-7)
+## Fase 3 — Smart Contract: Enforcement de Políticas (3 dias · d6-8)
 
-- [ ] Estrutura de política YAML + parser
-- [ ] Regras: blocklist, allowlist de programas, amount threshold (absoluto + %), dedup, rate limit/burst
-- [ ] Extensibilidade plugável (registry de regras)
-- [ ] Testes unitários (cobertura > 90% neste módulo)
+- [ ] `instructions/execute.rs` — transação iniciada pelo agente com verificação completa de políticas
+- [ ] Enforcement de limite por TX
+- [ ] Rastreamento de limite por período (conta de contador diário/semanal)
+- [ ] Verificação de whitelist de destinos
+- [ ] Verificação de whitelist de programas
+- [ ] Enforcement de rate limit
+- [ ] `instructions/update_policy.rs` — operador atualiza parâmetros de política
+- [ ] Testes Anchor para cada regra (casos de aprovação + violação)
 
-## Fase 4 — Audit Chain (2 dias · d8-9)
+## Fase 4 — SDK TypeScript (2 dias · d9-10)
 
-- [ ] Modelo SQLAlchemy + schema da tabela `audit_log`
-- [ ] Função `append(record)` que calcula `prev_hash` e encadeia
-- [ ] CLI `aegis audit verify` que recalcula a cadeia
-- [ ] Testes: inserções, verificação, detecção de adulteração
+- [ ] `sdk/src/pda.ts` — helpers de derivação PDA (vault, policy)
+- [ ] `sdk/src/client.ts` — `AegisClient` encapsulando chamadas do programa Anchor
+- [ ] `sdk/src/types.ts` — tipos TypeScript espelhando structs on-chain
+- [ ] Testes do SDK contra localnet
 
-## Fase 5 — Intent Validator (Claude) (3 dias · d10-12)
+## Fase 5 — Dashboard Web: Core (3 dias · d11-13)
 
-- [ ] Prompt template (system + few-shot) com exemplos dos 5 ataques
-- [ ] Integração Anthropic SDK com **prompt caching** nas partes estáticas
-- [ ] Parser estruturado do output (`verdict | confidence | reasoning`)
-- [ ] Timeout + fallback (`fail_closed` default)
-- [ ] Testes com Anthropic mockado + 1 teste opt-in usando API real
+- [ ] Scaffold do projeto Next.js com Tailwind + wallet adapter
+- [ ] Página de listagem de cofres — mostrar todos os cofres da wallet conectada
+- [ ] Página de detalhe do cofre — saldo, resumo de política, ações de depósito/saque
+- [ ] Editor de políticas — atualizar limites de gastos, whitelists, rate limits
+- [ ] Conexão de wallet (Phantom / Solflare)
 
-## Fase 6 — Simulator (2 dias · d13-14)
+## Fase 6 — Dashboard Web: Monitoramento (2 dias · d14-15)
 
-- [ ] Wrapper `simulateTransaction` via `httpx`
-- [ ] Parse de `accounts` / `logs` / `unitsConsumed` / erros
-- [ ] Diff de saldos SOL + SPL (comparar `accounts` antes vs depois)
-- [ ] Testes com fixtures de respostas reais de devnet
+- [ ] Feed de histórico de transações com status de veredicto (aprovado/bloqueado)
+- [ ] Indexer de eventos on-chain (escutar eventos do programa, armazenar em DB local)
+- [ ] Visualizador de trilha de auditoria com filtros por cofre, veredicto, data
+- [ ] Atualizações em tempo real via WebSocket ou polling
 
-## Fase 7 — Orchestrator (2 dias · d15-16)
+## Fase 7 — Integração x402 (2 dias · d16-17)
 
-- [ ] `engine/orchestrator.py` encadeando Rules → Simulator → Intent → Audit
-- [ ] Fail-fast + short-circuit quando uma camada bloqueia
-- [ ] Política `fail_open` / `fail_closed`
-- [ ] Testes end-to-end com engine completo (sem proxy HTTP ainda)
+- [ ] Handler de fluxo de pagamento x402 no SDK
+- [ ] Servidor x402 mock (API paga com 1 endpoint)
+- [ ] Teste end-to-end: agente → resposta 402 → pagamento via cofre Aegis402 → resposta da API
 
-## Fase 8 — Proxy RPC (FastAPI) (3 dias · d17-19)
+## Fase 8 — Demo Layer (2 dias · d18-19)
 
-- [ ] `proxy/app.py` — servidor FastAPI
-- [ ] Handler JSON-RPC: intercepta `sendTransaction`, `sendRawTransaction`, `simulateTransaction`
-- [ ] Passthrough dos demais métodos
-- [ ] Dockerfile + docker-compose para rodar localmente
-- [ ] Smoke test: `curl` enviando TX → 403 com veredicto JSON
-
-## Fase 9 — SDK Python (1 dia · d20)
-
-- [ ] `sdk/client.py` — `AegisClient.send_with_intent(tx, intent)`
-- [ ] Exemplo em notebook (`examples/honest_agent.ipynb`)
-
-## Fase 10 — Harness x402 + demo layer (2 dias · d21-22)
-
-- [ ] `demo/x402_server.py` — API paga mock com 1 endpoint
-- [ ] `demo/honest_agent.py` — agente cliente que paga via x402 + Aegis402
-- [ ] `demo/rogue_agent.py` — agente hackeado que tenta os 5 ataques
-
-## Fase 11 — Script de cenários de ataque (1 dia · d23)
-
-- [ ] `demo/attack_scenarios.py` — roda os 5 ataques, imprime tabela com veredictos + referencia hashes no audit log
+- [ ] `demo/honest_agent.ts` — agente fazendo pagamentos x402 legítimos pelo cofre
+- [ ] `demo/rogue_agent.ts` — agente comprometido tentando os 5 ataques
+- [ ] `demo/attack_scenarios.ts` — roda todos os cenários, imprime tabela de veredictos
 - [ ] Output formatado para screenshot/vídeo
 
-## Fase 12 — Video demo + polimento submission (3 dias · d24-26)
+## Fase 9 — Vídeo Demo + Polimento da Submission (3 dias · d20-22)
 
-- [ ] Deploy do proxy em devnet (fly.io ou Render)
+- [ ] Deploy do programa na devnet
+- [ ] Deploy do dashboard (Vercel ou similar)
 - [ ] Gravar vídeo 3min seguindo roteiro interno de pitch
 - [ ] Polir README (screenshots do demo, badge de CI, quickstart)
 - [ ] Submissão no Colosseum Arena com link do GitHub + vídeo + pitch
@@ -99,16 +89,17 @@ Cronograma em **blocos de ~2-3 dias**. Ownership das frentes é tratado internam
 
 ## Buffer de risco
 
-Cronograma otimista = 26 dias. Buffer real: todos os estágios têm 20% a menos que o disponível. Se atrasar em 1-2 fases, cortar: dashboard web (nunca estava no MVP); Fase 9 SDK pode virar só exemplo de uso direto do proxy.
+Cronograma otimista = 22 dias. Se atrasar em 1-2 fases, cortar: monitoramento do dashboard pode ser simplificado para lista básica de TXs; SDK Python é opcional e pode ser adiado para pós-hackathon.
 
 ---
 
 ## Definição de "pronto para submissão"
 
 - [ ] Repo público no GitHub com README, LICENSE (MIT), CI verde
-- [ ] `uv run python demo/attack_scenarios.py` roda e mostra os 5 ataques bloqueados
-- [ ] Fluxo honesto funciona em devnet real (pagamento x402 de US$ 0.01 passa)
-- [ ] `aegis audit verify` confirma cadeia íntegra
+- [ ] Programa Anchor deployado na devnet com build verificado
+- [ ] `demo/attack_scenarios.ts` roda e mostra os 5 ataques bloqueados
+- [ ] Fluxo honesto x402 funciona na devnet (micropagamento passa pelo cofre)
+- [ ] Dashboard live e conectado à devnet
 - [ ] Vídeo demo ≤ 3min publicado (YouTube ou Loom)
 - [ ] Projeto registrado no Colosseum Arena
 
@@ -116,9 +107,10 @@ Cronograma otimista = 26 dias. Buffer real: todos os estágios têm 20% a menos 
 
 ## O que NÃO está no MVP (roadmap pós-hackathon)
 
-- Dashboard web de auditoria
-- Múltiplos LLMs (hoje: só Claude)
-- Policy editor GUI
+- Autoridade de cofre multi-sig
+- Suporte a tokens SPL além de SOL
+- Validação de intenção com IA (camada Claude sobre regras on-chain)
+- Dashboard mobile-friendly
 - Métricas/alertas Prometheus
-- Integrações nativas Phantom / Privy / MagicBlock
-- Fine-tuning de modelo próprio com audit log
+- RBAC granular para operadores multi-agente
+- Invocação cross-program (CPI) para fluxos DeFi complexos

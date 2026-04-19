@@ -8,191 +8,217 @@ Technical reference document. No code in this phase — only components, flows, 
 
 ## 1. Components
 
-### 1.1 RPC Proxy
-- FastAPI server exposing the same JSON-RPC methods as a Solana RPC.
-- Specifically intercepts: `sendTransaction`, `sendRawTransaction`, `simulateTransaction`.
-- All other methods are transparently forwarded to the upstream RPC (devnet/mainnet).
-- **x402 integration point:** in the canonical x402 flow, the facilitator/client calls `sendTransaction` to settle payment. Pointing the RPC URL at Aegis402 makes every TX go through a verdict before reaching Solana.
+### 1.1 Solana Program (Rust / Anchor)
 
-### 1.2 Python SDK (`aegis402`)
-- Wrapper on top of `solders`/`solana-py`.
-- Primary method: `client.send_with_intent(transaction, intent_declaration, context)`.
-- Useful for agents that emit a structured intent (natural language + parameters) alongside the TX.
+The core of Aegis402. A single on-chain program that manages:
 
-### 1.3 Forensic Engine
+- **PDA Vaults:** each agent (or operator) gets a vault derived from a deterministic seed. Funds are deposited into the vault; the program is the sole authority to release them.
+- **Policy Accounts:** on-chain accounts storing the active policy for each vault — spending limits (per-TX and per-period), allowed destination addresses, allowed program IDs (protocol whitelist), and rate limits.
+- **Transaction Validation:** every withdrawal instruction goes through the full policy check before the program signs with the PDA authority. If any rule fails, the TX is rejected on-chain — no funds move.
 
-Orchestrator chains: **Rules → Simulator → Intent Validator → Audit**. Fail-fast: if an earlier layer rejects, later ones don't run.
+Key instructions:
+| Instruction | Description |
+|---|---|
+| `initialize_vault` | Creates a new PDA vault + policy account for an agent/operator |
+| `deposit` | Transfers SOL or SPL tokens into the vault |
+| `execute_transaction` | Agent requests a withdrawal — program validates against all policies, signs with PDA if approved |
+| `update_policy` | Operator updates spending limits, whitelists, or rate limits (requires operator authority) |
+| `withdraw` | Operator withdraws funds back from the vault (requires operator authority) |
 
-#### 1.3.1 Rules (deterministic)
-- Address blocklist (known sinks, mixers, zero-reputation fresh accounts)
-- Allowlist of called programs (System, SPL Token, official x402 facilitator, etc.)
-- Value caps (absolute + % of agent wallet balance)
-- Dedup by message hash within an N-second window
-- Rate limit / burst detection (dust-drain)
-- Policy pluggable via YAML (`policies/default.yaml`)
+### 1.2 Middleware / SDK
 
-#### 1.3.2 Simulator — local preview via `simulateTransaction`
-Solana RPC exposes `simulateTransaction`, which executes a TX against the current state **without** committing it. Aegis402 uses this as a deterministic preview layer:
+Bridge between the AI agent and the on-chain program.
 
-- Calls `simulateTransaction` with `replaceRecentBlockhash=true` and `accounts.encoding="base64"` so we get the post-execution state of every account the TX touches.
-- Parses the response into a structured **balance diff**: SOL delta per account, SPL token delta per owner, program logs, compute units consumed, execution errors.
-- Cross-checks the diff against the policy (e.g., "no account the agent owns may lose more than X SOL", "no unknown SPL mint may gain funds from the agent").
-- **Why it matters:** this catches drains and swaps that look fine to static rules but only reveal themselves when actually executed. If the simulated state violates the policy, the verdict is `block` before the real `sendTransaction` even fires.
+- **TypeScript SDK:** wraps Solana Web3.js to build `execute_transaction` instructions with the correct PDA derivation and policy context. Agents call the SDK instead of building raw Solana transactions.
+- **Python SDK (optional):** thin wrapper for Python-based agent frameworks (LangChain, CrewAI, etc.).
+- **x402 integration:** handles the HTTP 402 payment flow — when an API returns 402, the middleware builds the payment TX, routes it through the Aegis402 program, and returns the result to the agent.
 
-#### 1.3.3 Intent Validator (Claude) — tiered for latency
-- Input: `(intent_declaration, decoded_transaction, simulated_balance_diff, agent_context)`.
-- Output: `{verdict: allow|block|warn, confidence: 0..1, reasoning: str}`.
-- **Tiered model routing** (critical for agent workloads where ms matter):
-  - **Hot path — Claude Haiku 4.5** runs on every TX. ~300-500ms typical, cheap, handles clear-cut cases.
-  - **Escalation path — Claude Opus 4.6** only fires when Haiku returns low confidence, a TX is high-value (above a policy threshold), or the agent_context flags it. Opus takes longer but only for the small subset where accuracy beats latency.
-- **Prompt caching** (Anthropic) on the static parts of the prompt (schema, rules, few-shot examples) → input tokens drop ~90% after the first call on each model tier.
-- Short timeout (~1s Haiku, ~3s Opus) + deterministic fallback (`fail_closed` by default) if Claude is unavailable.
-- **Target end-to-end latency:** sub-second for the common case (Rules + Simulator + Haiku running in parallel where safe).
+### 1.3 Web Dashboard
 
-#### 1.3.4 Audit Chain
-- Append-only SQLite.
-- Each record: `{hash, prev_hash, timestamp, agent_id, intent, tx_bytes, verdict, reasoning, layer_blocked}`.
-- Merkle-style chained hash (each record embeds `prev_hash`).
-- CLI `aegis audit verify` recomputes the chain and fails if any record was tampered with.
+Operator-facing interface for managing vaults and policies.
 
-### 1.4 Demo Layer
-- Mock **x402 server** (paid API charging a micropayment per call).
-- **Client agent** (typical agent stack with `anthropic` + `solders`).
-- **Rogue agent** — "compromised" agent attempting 5 canonical attacks.
+- **Policy configuration:** set spending limits (per-TX, daily, weekly), manage protocol whitelists, configure rate limits.
+- **Real-time monitoring:** live feed of transactions passing through vaults, with verdict (approved/blocked) and the policy rule that triggered.
+- **Vault management:** deposit/withdraw funds, view balances, see transaction history.
+- **Audit trail:** searchable log of all transaction verdicts with on-chain references.
+
+Built with React / Next.js, connecting to Solana via Web3.js and reading on-chain state + indexed history.
+
+### 1.4 Indexer
+
+Listens to on-chain events emitted by the Aegis402 program and stores them in a queryable database for the dashboard.
+
+- Tracks: vault creation, deposits, withdrawals, policy updates, transaction verdicts.
+- Provides historical data that would be expensive to query on-chain repeatedly.
 
 ---
 
-## 2. End-to-end flow (legit TX)
+## 2. PDA Vault Architecture
+
+```mermaid
+flowchart TB
+    OP["Operator"] -->|"initialize_vault\nupdate_policy\nwithdraw"| PROG["Aegis402 Program\n(Anchor)"]
+    AG["AI Agent"] -->|"execute_transaction"| PROG
+    PROG --> VA["PDA Vault\n(funds)"]
+    PROG --> PA["Policy Account\n(rules)"]
+    PROG -->|"approved"| SOL[("Solana")]
+    PROG -->|"blocked → error"| AG
+```
+
+### PDA Derivation
+
+```
+vault_pda = findProgramAddress(["vault", operator_pubkey, vault_id], program_id)
+policy_pda = findProgramAddress(["policy", vault_pda], program_id)
+```
+
+The vault PDA is the **sole authority** over the funds. The program signs with this PDA only after all policy checks pass. Neither the agent nor the operator can move funds outside the program.
+
+---
+
+## 3. Policy enforcement — on-chain rules
+
+| Rule | Description | Enforcement |
+|---|---|---|
+| **Per-TX limit** | Maximum SOL/token amount per single transaction | Checked against instruction amount |
+| **Period limit** | Maximum cumulative spend over a time window (daily/weekly) | Tracked via on-chain counter account |
+| **Destination whitelist** | Only approved addresses can receive funds | Checked against recipient in instruction |
+| **Program whitelist** | Only approved programs can be called (e.g., SPL Token, x402 facilitator) | Checked against program ID in instruction |
+| **Rate limit** | Maximum number of TXs within a time window | Tracked via on-chain counter |
+
+All rules are stored in the policy account and checked atomically in `execute_transaction`. If any rule fails, the entire TX is rejected.
+
+---
+
+## 4. End-to-end flow (legitimate TX)
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant A as AI Agent
-    participant X as Aegis402 Proxy
-    participant S as Solana RPC
+    participant M as Middleware/SDK
+    participant P as Aegis402 Program
+    participant S as Solana
 
-    A->>X: sendTransaction(tx)
-    X->>X: Rules.check(tx) ✓
-    X->>S: simulateTransaction
-    S-->>X: simulation result
-    X->>X: IntentValidator.check()<br/>(Claude: intent == tx ✓)
-    X->>X: Audit.append(verdict)
-    X->>S: sendTransaction
-    S-->>X: tx signature
-    X-->>A: signature
+    A->>M: "pay 0.01 SOL for API X"
+    M->>M: Build execute_transaction IX
+    M->>P: Submit TX
+    P->>P: Check per-TX limit ✓
+    P->>P: Check period limit ✓
+    P->>P: Check destination whitelist ✓
+    P->>P: Check program whitelist ✓
+    P->>P: Sign with PDA authority
+    P->>S: Transfer from vault
+    S-->>M: TX signature
+    M-->>A: Payment confirmed
 ```
 
-## 3. End-to-end flow (malicious TX — intent drift)
+## 5. End-to-end flow (blocked TX — policy violation)
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant R as Rogue Agent
-    participant X as Aegis402 Proxy
-    participant S as Solana RPC
+    participant M as Middleware/SDK
+    participant P as Aegis402 Program
 
-    Note over R: intent = "pay 0.01 SOL for API X"<br/>tx = transfer 5 SOL → 0xATTACKER
-    R->>X: sendTransaction(tx)
-    X->>X: Rules: amount > cap ⚠
-    X->>X: Simulator: balance drain ⚠
-    X->>X: Intent: mismatch ✗
-    X->>X: Audit.append(BLOCKED)
-    X-->>R: HTTP 403 + verdict
-    Note over S: TX never reaches Solana
+    Note over R: Hallucination: "transfer 100 SOL<br/>to unknown address"
+    R->>M: "transfer 100 SOL to 0xUNKNOWN"
+    M->>M: Build execute_transaction IX
+    M->>P: Submit TX
+    P->>P: Check per-TX limit ✗<br/>(100 SOL > 1 SOL cap)
+    P-->>M: Error: PolicyViolation
+    M-->>R: TX blocked — exceeds spending limit
+    Note over P: Funds never moved
 ```
 
 ---
 
-## 4. Attack scenarios demonstrated in the MVP
+## 6. Attack scenarios defended by the MVP
 
-| # | Name | Vector | Blocking layer |
+| # | Name | Vector | Blocking rule |
 |---|---|---|---|
-| 1 | **Wallet Drain** | Agent hallucinates an address and transfers full balance | Rules (amount threshold) + Intent (mismatch) |
-| 2 | **Scam Program Call** | TX invokes a program outside the allowlist | Rules (allowlist) |
-| 3 | **Intent Drift** | Declared intent ≠ decoded action | Intent Validator (Claude) |
-| 4 | **Replay / Duplicate** | Same TX submitted within a short window | Rules (dedup by hash) |
-| 5 | **Dust-Drain** | N micro-TXs aiming to exhaust fees | Rules (rate limit / burst) |
+| 1 | **Wallet Drain** | Agent hallucinates and transfers full balance | Per-TX limit + period limit |
+| 2 | **Unauthorized Protocol** | TX calls a program outside the whitelist | Program whitelist |
+| 3 | **Intent Drift** | Declared intent doesn't match destination | Destination whitelist |
+| 4 | **Replay / Duplicate** | Same TX submitted multiple times | Rate limit |
+| 5 | **Dust-Drain** | Many micro-TXs to exhaust fees | Rate limit + period limit |
 
-Each scenario appends a record to the audit log with a chained `prev_hash`, demonstrating forensic auditability.
+All verdicts are emitted as on-chain events and indexed for the dashboard audit trail.
 
 ---
 
-## 5. Planned folder structure
+## 7. Planned folder structure
 
 ```
 aegis402/
 ├── README.md
 ├── README.pt-BR.md
-├── pyproject.toml
-├── .env.example
-├── CLAUDE.md                    ← context for future sessions
+├── LICENSE
 ├── docs/
 │   ├── ARCHITECTURE.md         ARCHITECTURE.pt-BR.md
 │   └── ROADMAP.md              ROADMAP.pt-BR.md
-├── src/aegis402/
-│   ├── __init__.py
-│   ├── config.py
-│   ├── schemas.py               ← IntentDeclaration, Verdict, TxAnalysis
-│   ├── proxy/
-│   │   ├── app.py               ← FastAPI, /rpc and /analyze routes
-│   │   └── handlers.py          ← per-method JSON-RPC logic
-│   ├── sdk/
-│   │   └── client.py            ← AegisClient.send_with_intent()
-│   ├── engine/
-│   │   ├── orchestrator.py      ← Rules → Simulator → Intent → Audit
-│   │   ├── rules.py
-│   │   ├── simulator.py
-│   │   ├── intent.py            ← Claude + prompt caching
-│   │   ├── decoder.py           ← decode SystemProgram, SPL Token, x402
-│   │   └── audit.py             ← hash chain
-│   └── policies/
-│       └── default.yaml
+├── programs/aegis402/          ← Anchor program
+│   ├── Cargo.toml
+│   └── src/
+│       ├── lib.rs              ← entrypoint + instruction dispatch
+│       ├── state.rs            ← Vault, Policy account structs
+│       ├── instructions/
+│       │   ├── initialize.rs
+│       │   ├── deposit.rs
+│       │   ├── execute.rs      ← policy enforcement logic
+│       │   ├── update_policy.rs
+│       │   └── withdraw.rs
+│       └── errors.rs           ← PolicyViolation, etc.
+├── sdk/                        ← TypeScript SDK
+│   ├── package.json
+│   └── src/
+│       ├── client.ts           ← AegisClient
+│       ├── pda.ts              ← PDA derivation helpers
+│       └── types.ts
+├── app/                        ← Next.js dashboard
+│   ├── package.json
+│   └── src/
+│       ├── app/
+│       │   ├── page.tsx        ← dashboard home
+│       │   ├── vaults/
+│       │   └── policies/
+│       └── components/
 ├── demo/
-│   ├── x402_server.py           ← mock paid API
-│   ├── honest_agent.py
-│   ├── rogue_agent.py
-│   └── attack_scenarios.py      ← pitch centerpiece
-└── tests/
-    ├── test_rules.py
-    ├── test_decoder.py
-    ├── test_intent.py           ← Anthropic mocked
-    ├── test_audit_chain.py
-    ├── test_proxy.py
-    └── test_e2e_devnet.py
+│   ├── honest_agent.ts
+│   ├── rogue_agent.ts
+│   └── attack_scenarios.ts
+├── tests/
+│   ├── aegis402.ts             ← Anchor tests
+│   └── sdk.test.ts
+├── Anchor.toml
+└── package.json
 ```
 
 ---
 
-## 6. x402 integration — lowest possible barrier to entry
+## 8. x402 integration
 
 Canonical x402 flow:
 1. Client calls a paid endpoint → receives HTTP 402 with payment requirements.
-2. Client builds a Solana TX (usually USDC or SOL) with x402 metadata.
-3. Client signs and submits TX via `sendTransaction`.
+2. Client builds a Solana TX with x402 metadata.
+3. Client submits TX to settle the payment.
 4. Server verifies on-chain and releases the response.
 
-**Aegis402 hooks into step 3 via a one-line change.** The agent dev swaps the Solana RPC URL:
-
-```diff
-- SOLANA_RPC_URL=https://api.devnet.solana.com
-+ SOLANA_RPC_URL=https://aegis402.example.com/rpc
-```
-
-That's it. The agent, the x402 client library, and the wallet all keep sending `sendTransaction` as before — Aegis402 transparently intercepts, runs the full forensic stack, and either forwards to the real Solana RPC (on `allow`) or returns a structured `block` verdict as JSON-RPC error.
+**Aegis402 hooks into step 3.** Instead of the agent signing and sending the TX directly, the middleware builds an `execute_transaction` instruction that routes the payment through the PDA vault. The on-chain program enforces all policies before the funds move.
 
 **Why this matters for adoption:**
-- No SDK install required for basic protection.
-- No changes to the agent's prompting, wallet, or x402 facilitator code.
-- Works with *any* language — the agent could be Python, TS, Rust, or anything that speaks JSON-RPC.
-- Easy to A/B test: run half of a fleet through Aegis402, keep the other half direct.
-
-The Python SDK (`aegis402.AegisClient`) exists for teams that want richer integrations — passing structured intent, attaching agent metadata, or receiving verdicts as typed Python objects — but the RPC path alone delivers the core guarantee.
+- Agents never need direct access to private keys.
+- Policies are enforced at the smart contract level — cannot be bypassed by agent bugs.
+- Operators can set spending limits appropriate for each agent's use case.
+- Works with any x402-compatible service without modifications on the server side.
 
 ---
 
-## 7. Non-functional considerations
+## 9. Non-functional considerations
 
-- **Latency:** Rules run in < 5ms. Simulator depends on the RPC (~100ms). Intent validator with Claude + caching: ~400-800ms. Overhead is acceptable for x402 (which already waits for on-chain confirmation).
-- **Cost:** Prompt caching cuts input tokens by ~90% after the first call. Estimated production cost per validated TX: ~US$ 0.001–0.005.
-- **Fail-safe:** if the engine crashes, policy-configurable: `fail_open` (let through, log) or `fail_closed` (block all). Default = `fail_closed`.
-- **Privacy:** declared intents may carry sensitive data — optional redaction before sending to Claude.
+- **Security:** all policy enforcement happens on-chain. The middleware is a convenience layer — even if compromised, the on-chain program rejects violating transactions.
+- **Latency:** on-chain validation adds minimal overhead (~200ms) on top of normal Solana TX confirmation time.
+- **Cost:** Solana TX fees (~0.000005 SOL per TX) + rent for vault/policy accounts (~0.002 SOL one-time).
+- **Fail-safe:** if the middleware goes down, funds remain safe in PDA vaults — no one can move them without going through the program.
+- **Auditability:** every verdict is an on-chain event, fully verifiable by any Solana explorer or custom indexer.

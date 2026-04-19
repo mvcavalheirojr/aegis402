@@ -2,37 +2,40 @@
 
 **🇺🇸 English** · [🇧🇷 Português](README.pt-BR.md)
 
-> Real-time **x402-native security layer** for AI agents paying autonomously on Solana.
+> **On-chain financial governance middleware** for AI agents on Solana — programmable firewall with PDA vaults, policy enforcement via smart contracts, and a web dashboard for real-time monitoring.
 
-**Status:** pre-implementation — this repository currently ships only the project documentation. Code lands on the next sprint.
+**Status:** pre-implementation — documentation only. Code lands next sprint.
 **Hackathon:** [Solana Frontier Hackathon 2026](https://colosseum.com/frontier) · Submission deadline: **May 11, 2026**
 
 ---
 
 ## Pitch
 
-Aegis402 is the **real-time forensic layer** for the emerging economy of AI agents that already pay APIs, other agents, and services autonomously through the **x402** standard on Solana. Before each transaction gets signed, Aegis402 intercepts it, checks the **declared intent** against the **actual decoded action** using deterministic rules + Claude, writes every verdict to a **cryptographically chained audit log**, and releases or blocks. Agents hallucinate — Aegis402 makes sure hallucinations don't turn into drained wallets.
+AI agents are already transacting autonomously on Solana — paying APIs, services, and other agents through the **x402** standard. But agents hallucinate, get prompt-injected, and drift from their declared intent. One bad transaction can drain a wallet with no recourse.
+
+Aegis402 is the **on-chain security middleware** between the agent and the blockchain. Instead of letting bots hold private keys directly, funds live in **PDA-controlled vaults** governed by spending limits, protocol whitelists, and compliance rules — all enforced by a Rust/Anchor smart contract. A web dashboard lets operators configure policies, monitor transactions, and control vault balances in real time. Agents operate freely within their guardrails; anything outside gets blocked before it ever hits the chain.
 
 ---
 
 ## Problem
 
-The [autonomous agent economy](https://solana.com/x402/hackathon) is already live: AI agents pay APIs, other agents, and services in real time via x402 (HTTP 402 + on-chain micropayments). Every call becomes a Solana transaction signed by an agent wallet.
+The [autonomous agent economy](https://solana.com/) is live: AI agents pay APIs, other agents, and services in real time via x402 (HTTP 402 + on-chain micropayments). Every call becomes a Solana transaction.
 
-Three new attack vectors:
+Three attack vectors with no standard defense today:
+
 1. **Hallucination:** the LLM "decides" to transfer the entire balance to a fabricated address.
-2. **Prompt injection:** hostile HTML manipulates the agent into signing a malicious TX.
-3. **Intent drift:** the agent says it will "pay US$ 0.01 for API X" but the actual TX sends 5 SOL to a different destination.
+2. **Prompt injection:** hostile input manipulates the agent into signing a malicious TX.
+3. **Intent drift:** the agent says "pay US$ 0.01 for API X" but the actual TX sends 5 SOL to a different destination.
 
-There is no standard layer today that validates **declared intent vs actual action** before signing.
+Giving agents direct custody of private keys is the root cause. There is no programmable layer today that enforces **financial policies on-chain** before funds move.
 
 ---
 
 ## Solution — Aegis402 in 3 bullets
 
-- **Drop-in via a single env var.** Aegis402 ships as a Solana RPC proxy: the agent developer swaps `SOLANA_RPC_URL` to point at Aegis402 and the middleware transparently inspects every `sendTransaction`. Zero agent code changes. Python SDK available for deeper integrations.
-- **Hybrid forensics with local simulation.** Deterministic rules (blocklist, thresholds, rate limits) + **Solana `simulateTransaction` to preview the exact balance diff before signing** + Claude validating semantically whether the declared intent matches the decoded TX.
-- **Audit chain:** every verdict is written to an append-only log with chained hashes — a verifiable forensic trail ready for compliance.
+- **PDA vaults with on-chain policy enforcement.** Agent funds live in Program Derived Address vaults managed by a Rust/Anchor smart contract. Spending limits, protocol whitelists, and compliance rules are written on-chain — not in an off-chain config that can be bypassed.
+- **x402-native middleware.** Aegis402 sits between the AI agent and Solana, intercepting transactions and routing them through the on-chain program. Integrates with the x402 payment standard for automated HTTP 402 payment flows.
+- **Web dashboard for operators.** Configure vault policies, monitor transactions in real time, manage balances, and review audit trails — all from a single interface. No CLI required for day-to-day operations.
 
 ---
 
@@ -40,12 +43,12 @@ There is no standard layer today that validates **declared intent vs actual acti
 
 | Layer | What it does | Tech |
 |---|---|---|
-| Rules | Fail-fast on obvious attacks (amount threshold, program allowlist, dedup, rate limit) | Pure Python, YAML-pluggable |
-| Simulator | Runs Solana `simulateTransaction` and extracts the **balance diff** before signing — catches drains even when rules pass | `solders` / `solana-py` |
-| Intent Validator | Claude compares declared intent ↔ decoded TX, with prompt caching. **Tiered models:** Haiku 4.5 on the hot path (~300-500ms), Opus 4.6 escalated only for high-value or ambiguous TXs | Anthropic SDK |
-| Audit Chain | Append-only SQLite with chained Merkle-style hashes — verifiable | SQLite + hashlib |
+| Smart Contract | PDA vault management, on-chain policy enforcement (spending limits, whitelists, rate limits), transaction validation | Rust / Anchor |
+| Middleware | Intercepts agent transactions, routes through on-chain program, handles x402 payment flows | TypeScript / Solana Web3.js |
+| Dashboard | Policy configuration, real-time TX monitoring, vault balance management, audit trail viewer | React / Next.js |
+| Audit Trail | Every transaction verdict is recorded on-chain with the enforcing policy — fully verifiable | On-chain logs + indexer |
 
-> **Why latency matters:** an agent making an x402 call can't afford a 10-second verdict. Aegis402 targets **sub-second end-to-end** by running rules and simulation in parallel with a Haiku 4.5 intent check, escalating to Opus only when the fast path is inconclusive.
+> **Why on-chain matters:** off-chain firewalls can be bypassed if the agent has direct key access. Aegis402 enforces policies at the smart contract level — the only way to move funds is through the program, which checks every rule before signing.
 
 ---
 
@@ -53,32 +56,30 @@ There is no standard layer today that validates **declared intent vs actual acti
 
 ```mermaid
 flowchart LR
-    A["AI Agent / x402 stack"] -->|"swap SOLANA_RPC_URL<br/>(or use SDK)"| P
-    subgraph AEGIS["Aegis402 middleware"]
+    A["AI Agent / x402 client"] -->|"TX request"| M
+    subgraph AEGIS["Aegis402"]
         direction TB
-        P["RPC Proxy<br/>(drop-in)"] --> E["Forensic Engine"]
-        E --> R["Rules<br/>(deterministic)"]
-        E --> S["Simulator<br/>(simulateTransaction<br/>balance diff)"]
-        E --> I["Intent Validator<br/>(Haiku 4.5 → Opus 4.6)"]
-        E --> AU[("Audit chain ⛓")]
+        M["Middleware"] --> SC["Smart Contract\n(Anchor)"]
+        SC --> V["PDA Vault\n💰"]
+        SC --> P["On-chain Policies\n(limits, whitelists)"]
+        D["Web Dashboard"] --> SC
+        D --> IDX["Indexer\n(TX history)"]
     end
-    P -->|"approved TX"| SOL[("Solana devnet / mainnet")]
+    SC -->|"approved TX"| SOL[("Solana")]
+    SC -->|"blocked"| A
 ```
 
-**Integration is a single env-var swap:** point `SOLANA_RPC_URL` at the Aegis402 proxy and every `sendTransaction` gets a verdict before reaching Solana. Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+**Agents never hold private keys directly.** Funds are deposited into PDA vaults controlled by the Aegis402 program. The smart contract enforces every configured policy before releasing funds. Full details in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
 ## Planned stack
 
-- **Python 3.11+**
-- `solders` + `solana-py` — Solana client (incl. `simulateTransaction` for balance-diff preview)
-- `anthropic` — tiered Claude routing (Haiku 4.5 default; Opus 4.6 for escalation) with prompt caching
-- `fastapi` + `uvicorn` — RPC proxy
-- `pydantic` v2 — schemas
-- `sqlalchemy` + SQLite — audit log
-- `httpx` — upstream RPC + tests
-- `pytest` + `pytest-asyncio`
+- **Rust / Anchor** — Solana program (PDA vaults, on-chain policy enforcement)
+- **TypeScript / Solana Web3.js** — middleware + SDK
+- **React / Next.js** — web dashboard
+- **x402** — HTTP 402 payment standard integration
+- **Python SDK** (optional) — for Python-based agent frameworks
 
 ---
 

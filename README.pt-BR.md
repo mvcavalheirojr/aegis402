@@ -2,37 +2,40 @@
 
 [🇺🇸 English](README.md) · **🇧🇷 Português**
 
-> Camada de segurança **x402-native** em tempo real para agentes de IA que pagam autonomamente na Solana.
+> **Middleware de governança financeira on-chain** para agentes de IA na Solana — firewall programável com cofres PDA, execução de políticas via smart contracts e dashboard web para monitoramento em tempo real.
 
-**Status:** pré-implementação — este repositório contém apenas a documentação do projeto. Código será adicionado na próxima sprint.
+**Status:** pré-implementação — apenas documentação. Código será adicionado na próxima sprint.
 **Hackathon:** [Solana Frontier Hackathon 2026](https://colosseum.com/frontier) · Submissão: **11/mai/2026**
 
 ---
 
 ## Pitch
 
-Aegis402 é a camada de **perícia forense em tempo real** para a nova economia de agentes IA que já começou a pagar APIs, outros agentes e serviços via o padrão **x402** na Solana. Antes de cada transação ser assinada, o Aegis402 intercepta, valida a **intenção declarada** contra a **ação real** usando regras determinísticas + Claude, grava em **log de auditoria criptograficamente encadeado**, e libera ou bloqueia. Agentes alucinam — Aegis402 não deixa a alucinação virar prejuízo.
+Agentes de IA já transacionam de forma autônoma na Solana — pagando APIs, serviços e outros agentes através do padrão **x402**. Mas agentes alucinam, sofrem prompt injection e desviam de sua intenção declarada. Uma transação ruim pode drenar a carteira sem possibilidade de reverter.
+
+Aegis402 é o **middleware de segurança on-chain** entre o agente e a blockchain. Em vez de bots custodiarem chaves privadas diretamente, os fundos ficam em **cofres PDA (Program Derived Addresses)** governados por limites de gastos, whitelists de protocolos e regras de conformidade — tudo executado por um smart contract Rust/Anchor. Um dashboard web permite que operadores configurem políticas, monitorem transações e controlem saldos dos cofres em tempo real. Agentes operam livremente dentro das guardrails; qualquer coisa fora é bloqueada antes de chegar à chain.
 
 ---
 
 ## Problema
 
-A [economia de agentes autônomos](https://solana.com/x402/hackathon) já existe: agentes IA pagam APIs, outros agentes e serviços em tempo real via x402 (HTTP 402 + micropagamentos on-chain). Cada chamada vira uma transação Solana assinada por uma carteira de agente.
+A [economia de agentes autônomos](https://solana.com/) já existe: agentes IA pagam APIs, outros agentes e serviços em tempo real via x402 (HTTP 402 + micropagamentos on-chain). Cada chamada vira uma transação Solana.
 
-Três vetores de risco novos:
-1. **Alucinação:** o LLM "decide" transferir saldo inteiro para um endereço inventado.
-2. **Prompt injection:** um HTML hostil manipula o agente a assinar TX maliciosa.
-3. **Intent drift:** o agente diz que vai "pagar US$ 0,01 pela API X" mas a TX real envia 5 SOL para outro destino.
+Três vetores de ataque sem defesa padrão hoje:
 
-Não existe hoje uma camada padrão que valide **intenção declarada vs ação real** antes da assinatura.
+1. **Alucinação:** o LLM "decide" transferir o saldo inteiro para um endereço inventado.
+2. **Prompt injection:** input hostil manipula o agente a assinar uma TX maliciosa.
+3. **Intent drift:** o agente diz "pagar US$ 0,01 pela API X" mas a TX real envia 5 SOL para outro destino.
+
+Dar custódia direta de chaves privadas aos agentes é a causa raiz. Não existe hoje uma camada programável que execute **políticas financeiras on-chain** antes dos fundos se moverem.
 
 ---
 
 ## Solução — Aegis402 em 3 bullets
 
-- **Drop-in via uma única env var.** Aegis402 entrega um proxy RPC Solana: o dev do agente troca `SOLANA_RPC_URL` para apontar ao Aegis402 e o middleware passa a inspecionar todo `sendTransaction`. Zero mudança no código do agente. SDK Python disponível para integrações mais profundas.
-- **Perícia híbrida com simulação local.** Regras determinísticas (blocklist, limites, rate limits) + **Solana `simulateTransaction` pré-visualizando o diff de saldo exato antes da assinatura** + Claude validando semanticamente se a intenção declarada bate com a TX decodificada.
-- **Audit chain:** todo veredicto é gravado em log append-only com hash encadeado — trilha forense verificável, pronta para compliance.
+- **Cofres PDA com políticas on-chain.** Os fundos do agente ficam em cofres PDA gerenciados por smart contract Rust/Anchor. Limites de gastos, whitelists de protocolos e regras de conformidade são gravados on-chain — não em config off-chain que pode ser contornada.
+- **Middleware x402-native.** Aegis402 fica entre o agente IA e a Solana, interceptando transações e roteando pelo programa on-chain. Integra com o padrão x402 para fluxos de pagamento automatizados via HTTP 402.
+- **Dashboard web para operadores.** Configure políticas dos cofres, monitore transações em tempo real, gerencie saldos e revise trilhas de auditoria — tudo em uma única interface. Sem necessidade de CLI para operações do dia a dia.
 
 ---
 
@@ -40,12 +43,12 @@ Não existe hoje uma camada padrão que valide **intenção declarada vs ação 
 
 | Camada | O que faz | Tecnologia |
 |---|---|---|
-| Rules | Fail-fast em ataques óbvios (amount threshold, allowlist de programas, dedup, rate limit) | Python puro, plugável via YAML |
-| Simulator | Executa `simulateTransaction` da Solana e extrai o **diff de saldos** antes da assinatura — pega drenos mesmo quando as regras passam | `solders` / `solana-py` |
-| Intent Validator | Claude compara intenção declarada ↔ TX decodificada, com prompt caching. **Modelos em tiers:** Haiku 4.5 no caminho quente (~300-500ms), Opus 4.6 só escalado em TXs de alto valor ou ambíguas | Anthropic SDK |
-| Audit Chain | Append-only SQLite com hash Merkle encadeado — verificável | SQLite + hashlib |
+| Smart Contract | Gerenciamento de cofres PDA, políticas on-chain (spending limits, whitelists, rate limits), validação de transações | Rust / Anchor |
+| Middleware | Intercepta transações de agentes, roteia pelo programa on-chain, gerencia fluxos x402 | TypeScript / Solana Web3.js |
+| Dashboard | Configuração de políticas, monitoramento de TXs em tempo real, gestão de saldos dos cofres, visualizador de auditoria | React / Next.js |
+| Trilha de Auditoria | Cada veredicto de transação é registrado on-chain com a política aplicada — totalmente verificável | Logs on-chain + indexer |
 
-> **Por que latência importa:** um agente fazendo chamada x402 não pode esperar 10 segundos por um veredicto. Aegis402 mira **sub-segundo ponta-a-ponta** rodando regras e simulação em paralelo com uma checagem de intenção via Haiku 4.5, escalando para Opus só quando o caminho rápido é inconclusivo.
+> **Por que on-chain importa:** firewalls off-chain podem ser contornados se o agente tem acesso direto à chave. Aegis402 aplica políticas no nível do smart contract — a única forma de mover fundos é pelo programa, que verifica cada regra antes de assinar.
 
 ---
 
@@ -53,32 +56,30 @@ Não existe hoje uma camada padrão que valide **intenção declarada vs ação 
 
 ```mermaid
 flowchart LR
-    A["Agente IA / Stack x402"] -->|"trocar SOLANA_RPC_URL<br/>(ou usar SDK)"| P
-    subgraph AEGIS["Aegis402 (middleware)"]
+    A["Agente IA / cliente x402"] -->|"requisição TX"| M
+    subgraph AEGIS["Aegis402"]
         direction TB
-        P["Proxy RPC<br/>(drop-in)"] --> E["Forensic Engine"]
-        E --> R["Rules<br/>(determinístico)"]
-        E --> S["Simulator<br/>(simulateTransaction<br/>diff de saldo)"]
-        E --> I["Intent Validator<br/>(Haiku 4.5 → Opus 4.6)"]
-        E --> AU[("Audit chain ⛓")]
+        M["Middleware"] --> SC["Smart Contract\n(Anchor)"]
+        SC --> V["Cofre PDA\n💰"]
+        SC --> P["Políticas On-chain\n(limites, whitelists)"]
+        D["Dashboard Web"] --> SC
+        D --> IDX["Indexer\n(histórico TX)"]
     end
-    P -->|"TX aprovada"| SOL[("Solana devnet / mainnet")]
+    SC -->|"TX aprovada"| SOL[("Solana")]
+    SC -->|"bloqueada"| A
 ```
 
-**Integração é uma única troca de env var:** aponte `SOLANA_RPC_URL` para o proxy Aegis402 e todo `sendTransaction` recebe veredicto antes de chegar à Solana. Detalhes em [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md).
+**Agentes nunca custodiam chaves privadas diretamente.** Fundos são depositados em cofres PDA controlados pelo programa Aegis402. O smart contract aplica cada política configurada antes de liberar fundos. Detalhes em [`docs/ARCHITECTURE.pt-BR.md`](docs/ARCHITECTURE.pt-BR.md).
 
 ---
 
 ## Stack prevista
 
-- **Python 3.11+**
-- `solders` + `solana-py` — cliente Solana (incl. `simulateTransaction` para preview de diff de saldo)
-- `anthropic` — roteamento Claude em tiers (Haiku 4.5 default; Opus 4.6 em escalação) com prompt caching
-- `fastapi` + `uvicorn` — proxy RPC
-- `pydantic` v2 — schemas
-- `sqlalchemy` + SQLite — audit log
-- `httpx` — upstream RPC + testes
-- `pytest` + `pytest-asyncio`
+- **Rust / Anchor** — Programa Solana (cofres PDA, políticas on-chain)
+- **TypeScript / Solana Web3.js** — middleware + SDK
+- **React / Next.js** — dashboard web
+- **x402** — integração com padrão de pagamento HTTP 402
+- **Python SDK** (opcional) — para frameworks de agentes em Python
 
 ---
 
