@@ -1,0 +1,239 @@
+# Aegis402 CI
+#
+# Bootstrap state: the repo currently ships docs + scaffolding only. Jobs that
+# depend on source that does not yet exist (`anchor build`, SDK tests, dashboard
+# build, etc.) carry `continue-on-error: true` so CI can stay green during
+# Phase 1 of `docs/ROADMAP.md`.
+#
+# REMOVE every `continue-on-error: true` line the moment the corresponding
+# package has real code. At that point a failing job must block the PR.
+# See `docs/CONVENTIONS.md §0` — "Green CI is a merge prerequisite".
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  SOLANA_VERSION: "1.18.22"
+  ANCHOR_VERSION: "0.30.1"
+  NODE_VERSION: "20"
+  PNPM_VERSION: "9"
+  RUST_TOOLCHAIN: "1.79.0"
+
+jobs:
+  lint:
+    name: Lint (fmt + clippy + eslint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-lint-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+        continue-on-error: true # tolerated until workspaces land
+
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+        continue-on-error: true # tolerated until Cargo.toml lands
+
+      - name: cargo clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+        continue-on-error: true # tolerated until Cargo.toml lands
+
+      - name: pnpm lint
+        run: pnpm -r lint
+        continue-on-error: true # tolerated until lint configs land
+
+  anchor:
+    name: Anchor build + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Cache Solana + Anchor
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/solana
+            ~/.avm
+            ~/.cargo/bin/anchor
+            ~/.cargo/bin/avm
+            ~/.local/share/solana
+          key: solana-${{ env.SOLANA_VERSION }}-anchor-${{ env.ANCHOR_VERSION }}
+
+      - name: Install Solana CLI
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/v${SOLANA_VERSION}/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Install Anchor via avm
+        run: |
+          cargo install --git https://github.com/coral-xyz/anchor avm --locked --force
+          avm install ${ANCHOR_VERSION}
+          avm use ${ANCHOR_VERSION}
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-anchor-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+        continue-on-error: true
+
+      - name: anchor build
+        run: anchor build
+        continue-on-error: true # tolerated until program scaffolding lands
+
+      - name: anchor test
+        run: anchor test
+        continue-on-error: true
+
+      - name: Upload IDL artifact
+        if: hashFiles('target/idl/**') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: idl
+          path: target/idl/**
+
+  sdk:
+    name: SDK tests + coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+        continue-on-error: true
+
+      - name: sdk test with coverage
+        run: pnpm --filter sdk test --coverage
+        continue-on-error: true # tolerated until sdk scaffolding lands
+
+  dashboard:
+    name: Dashboard test + build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: pnpm install
+        run: pnpm install --frozen-lockfile
+        continue-on-error: true
+
+      - name: app test
+        run: pnpm --filter app test
+        continue-on-error: true # tolerated until dashboard scaffolding lands
+
+      - name: app build
+        run: pnpm --filter app build
+        continue-on-error: true
+
+  coverage-program:
+    name: Anchor program coverage (100% gate)
+    runs-on: ubuntu-latest
+    needs: [anchor]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-cov-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Measure coverage
+        run: cargo llvm-cov --all-features --workspace --fail-under-lines 100
+        continue-on-error: true # tolerated until program scaffolding lands
+
+  all-green:
+    name: All green
+    runs-on: ubuntu-latest
+    needs: [lint, anchor, sdk, dashboard, coverage-program]
+    if: always()
+    steps:
+      - name: Fail if any dependency failed
+        run: |
+          if [ "${{ contains(needs.*.result, 'failure') }}" = "true" ] || \
+             [ "${{ contains(needs.*.result, 'cancelled') }}" = "true" ]; then
+            echo "At least one upstream job failed or was cancelled."
+            exit 1
+          fi
+          echo "All upstream jobs succeeded."

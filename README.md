@@ -2,10 +2,15 @@
 
 **🇺🇸 English** · [🇧🇷 Português](README.pt-BR.md)
 
+[![CI](https://github.com/mvcavalheirojr/aegis402/actions/workflows/ci.yml/badge.svg)](https://github.com/mvcavalheirojr/aegis402/actions/workflows/ci.yml)
+[![Pages](https://github.com/mvcavalheirojr/aegis402/actions/workflows/pages.yml/badge.svg)](https://github.com/mvcavalheirojr/aegis402/actions/workflows/pages.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > **On-chain financial governance middleware** for AI agents on Solana — programmable firewall with PDA vaults, policy enforcement via smart contracts, and a web dashboard for real-time monitoring.
 
-**Status:** pre-implementation — documentation only. Code lands next sprint.
+**Status:** pre-implementation — docs + engineering scaffolding are in place. Program / SDK / dashboard code lands in Phase 1 of [`docs/ROADMAP.md`](docs/ROADMAP.md).
 **Hackathon:** [Solana Frontier Hackathon 2026](https://colosseum.com/frontier) · Submission deadline: **May 11, 2026**
+**Landing:** https://mvcavalheirojr.github.io/aegis402/ · **Wiki:** https://github.com/mvcavalheirojr/aegis402/wiki (synced from [`wiki/`](wiki/))
 
 ---
 
@@ -89,20 +94,28 @@ flowchart LR
 aegis402/
 ├── README.md              ← you are here (English)
 ├── README.pt-BR.md        ← Portuguese version
+├── CLAUDE.md              ← guidance for Claude Code agents
 ├── LICENSE
-└── docs/
-    ├── ARCHITECTURE.md         ARCHITECTURE.pt-BR.md
-    └── ROADMAP.md              ROADMAP.pt-BR.md
+├── docs/
+│   ├── ARCHITECTURE.md         ARCHITECTURE.pt-BR.md
+│   ├── ROADMAP.md              ROADMAP.pt-BR.md
+│   └── CONVENTIONS.md          ← engineering conventions (TDD, CI, patterns)
+├── site/                  ← Astro source for the GitHub Pages landing
+├── wiki/                  ← markdown source synced to the GitHub Wiki
+├── .github/workflows/     ← CI, Pages deploy, Wiki sync
+└── .claude/
+    ├── skills/            ← team-shared Claude Code skills (versioned)
+    └── settings.json      ← team-shared permissions + hooks
 ```
 
-No source code yet. Implementation starts after the documentation review round.
+Program / SDK / dashboard source lands in Phase 1 of [`docs/ROADMAP.md`](docs/ROADMAP.md). Before contributing code, read [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) — it is the engineering source of truth (TDD, coverage gate, CI rules).
 
 ---
 
 ## Next steps
 
 1. Collect feedback on this documentation.
-2. Kick off implementation following [`docs/ROADMAP.md`](docs/ROADMAP.md).
+2. Kick off implementation following [`docs/ROADMAP.md`](docs/ROADMAP.md) and [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md).
 3. Submit on Colosseum Arena by May 11, 2026.
 
 ---

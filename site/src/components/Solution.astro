@@ -1,0 +1,41 @@
+---
+const pillars = [
+  {
+    title: "PDA vaults",
+    body:
+      "Agent funds live in Program Derived Address vaults. The Anchor program is the sole signer; agents never hold private keys.",
+  },
+  {
+    title: "On-chain policy enforcement",
+    body:
+      "Spending limits, destination and program whitelists, and rate limits are stored on-chain and checked atomically on every transaction.",
+  },
+  {
+    title: "x402-native middleware",
+    body:
+      "Sits between the agent and Solana, routing HTTP 402 payment flows through the vault without server-side changes.",
+  },
+  {
+    title: "Operator dashboard",
+    body:
+      "Configure policies, monitor transactions in real time, and review a tamper-evident audit trail fed by on-chain events.",
+  },
+];
+---
+
+<section id="how-it-works" aria-labelledby="solution-heading">
+  <h2 id="solution-heading">How Aegis402 works</h2>
+  <p>
+    Four layers, one invariant: funds only move through the Anchor program,
+    and only if every policy passes. Compromising the off-chain layers cannot
+    drain a vault.
+  </p>
+  <div class="grid">
+    {pillars.map((p) => (
+      <article class="card">
+        <h3>{p.title}</h3>
+        <p>{p.body}</p>
+      </article>
+    ))}
+  </div>
+</section>

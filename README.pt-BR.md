@@ -2,10 +2,15 @@
 
 [🇺🇸 English](README.md) · **🇧🇷 Português**
 
+[![CI](https://github.com/mvcavalheirojr/aegis402/actions/workflows/ci.yml/badge.svg)](https://github.com/mvcavalheirojr/aegis402/actions/workflows/ci.yml)
+[![Pages](https://github.com/mvcavalheirojr/aegis402/actions/workflows/pages.yml/badge.svg)](https://github.com/mvcavalheirojr/aegis402/actions/workflows/pages.yml)
+[![Licença: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 > **Middleware de governança financeira on-chain** para agentes de IA na Solana — firewall programável com cofres PDA, execução de políticas via smart contracts e dashboard web para monitoramento em tempo real.
 
-**Status:** pré-implementação — apenas documentação. Código será adicionado na próxima sprint.
+**Status:** pré-implementação — documentação e scaffolding de engenharia já no repo. Código do programa / SDK / dashboard entra na Fase 1 de [`docs/ROADMAP.pt-BR.md`](docs/ROADMAP.pt-BR.md).
 **Hackathon:** [Solana Frontier Hackathon 2026](https://colosseum.com/frontier) · Submissão: **11/mai/2026**
+**Landing:** https://mvcavalheirojr.github.io/aegis402/ · **Wiki:** https://github.com/mvcavalheirojr/aegis402/wiki (sincronizada a partir de [`wiki/`](wiki/) — conteúdo em inglês, voltado a devs)
 
 ---
 
@@ -89,20 +94,28 @@ flowchart LR
 aegis402/
 ├── README.md              ← versão em inglês
 ├── README.pt-BR.md        ← você está aqui
+├── CLAUDE.md              ← guia para agentes Claude Code
 ├── LICENSE
-└── docs/
-    ├── ARCHITECTURE.md         ARCHITECTURE.pt-BR.md
-    └── ROADMAP.md              ROADMAP.pt-BR.md
+├── docs/
+│   ├── ARCHITECTURE.md         ARCHITECTURE.pt-BR.md
+│   ├── ROADMAP.md              ROADMAP.pt-BR.md
+│   └── CONVENTIONS.md          ← convenções de engenharia (TDD, CI, patterns — EN)
+├── site/                  ← fonte Astro da landing publicada no GitHub Pages
+├── wiki/                  ← fonte markdown sincronizada com o GitHub Wiki (EN)
+├── .github/workflows/     ← CI, deploy Pages, sync Wiki
+└── .claude/
+    ├── skills/            ← skills compartilhadas do time (versionadas)
+    └── settings.json      ← permissões + hooks compartilhados
 ```
 
-Nenhum código-fonte ainda. Implementação começa após alinhamento desta documentação.
+Código do programa / SDK / dashboard entra na Fase 1 de [`docs/ROADMAP.pt-BR.md`](docs/ROADMAP.pt-BR.md). Antes de contribuir com código, leia [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md) — é a fonte de verdade de engenharia (TDD, gate de cobertura, regras de CI). Esse documento é mantido em inglês por ser dirigido a devs e IA.
 
 ---
 
 ## Próximos passos
 
 1. Colher feedback sobre esta documentação.
-2. Kick-off da implementação seguindo [`docs/ROADMAP.pt-BR.md`](docs/ROADMAP.pt-BR.md).
+2. Kick-off da implementação seguindo [`docs/ROADMAP.pt-BR.md`](docs/ROADMAP.pt-BR.md) e [`docs/CONVENTIONS.md`](docs/CONVENTIONS.md).
 3. Submissão no Colosseum Arena até 11/mai/2026.
 
 ---

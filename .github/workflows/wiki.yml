@@ -1,0 +1,30 @@
+name: Sync wiki/ to GitHub Wiki
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "wiki/**"
+      - ".github/workflows/wiki.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Publish wiki/ to <repo>.wiki
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Push wiki/ to GitHub wiki
+        uses: Andrew-Chen-Wang/github-wiki-action@v4
+        with:
+          path: wiki
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "docs(wiki): sync from wiki/ (${{ github.sha }})"

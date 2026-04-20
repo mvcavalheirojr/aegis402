@@ -1,0 +1,36 @@
+---
+const vectors = [
+  {
+    title: "Hallucination",
+    body:
+      "An LLM decides on its own to transfer the entire balance to a fabricated address.",
+  },
+  {
+    title: "Prompt injection",
+    body:
+      "Hostile input manipulates the agent into signing a malicious transaction.",
+  },
+  {
+    title: "Intent drift",
+    body:
+      "The agent says 'pay $0.01 for API X' but the actual TX sends 5 SOL somewhere else.",
+  },
+];
+---
+
+<section aria-labelledby="problem-heading">
+  <h2 id="problem-heading">The problem</h2>
+  <p>
+    AI agents are already transacting autonomously on Solana via the x402
+    standard. Giving them direct custody of private keys creates three attack
+    vectors with no standard defense:
+  </p>
+  <div class="grid">
+    {vectors.map((v) => (
+      <article class="card">
+        <h3>{v.title}</h3>
+        <p>{v.body}</p>
+      </article>
+    ))}
+  </div>
+</section>

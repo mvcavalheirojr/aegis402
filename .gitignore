@@ -1,6 +1,12 @@
 # Privado — nada daqui sobe ao repo
 .private/
-.claude/
+# .claude/: versionamos apenas artefatos compartilhados do time
+# (skills/, agents/, settings.json). Config local de cada dev fica fora.
+.claude/settings.local.json
+.claude/projects/
+.claude/cache/
+.claude/logs/
+.claude/*.log
 .env
 .env.*
 !.env.example
