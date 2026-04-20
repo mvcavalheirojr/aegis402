@@ -33,6 +33,7 @@ jobs:
         with:
           node-version: "20"
           cache: "pnpm"
+          cache-dependency-path: site/pnpm-lock.yaml
 
       - name: Install site dependencies
         working-directory: site
